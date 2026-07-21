@@ -10,6 +10,7 @@ _GHIDRA_CASE_OPERATIONS = {
     "list_functions",
     "decompile_function",
     "get_xrefs",
+    "get_capa_locations",
     "run_capa",
     "run_yara",
     "generate_report",

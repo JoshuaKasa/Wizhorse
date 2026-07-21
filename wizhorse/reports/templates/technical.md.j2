@@ -61,7 +61,7 @@ Limitations:
 - Error: `{{ capa.get("error") or "none" }}`
 {% if capa.get("matches") %}
 {% for match in capa.get("matches", []) %}
-- {{ match.get("rule") }}{% if match.get("namespace") %} (`{{ match.get("namespace") }}`){% endif %}: {{ match.get("locations", [])|join(", ") }}
+- {{ match.get("rule_name") or match.get("rule") }}{% if match.get("namespace") %} (`{{ match.get("namespace") }}`){% endif %}: {{ match.get("locations", [])|join(", ") }}
 {% endfor %}
 {% else %}
 - No capa capability matches recorded.

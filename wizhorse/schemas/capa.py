@@ -1,12 +1,12 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 class CapaMatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    rule: str
-    namespace: str | None = None
-    locations: list[str]
+    rule_name: str = Field(validation_alias=AliasChoices("rule_name", "rule"))
+    namespace: str = ""
+    locations: list[str] = Field(default_factory=list)
 
 
 class CapaResult(BaseModel):
