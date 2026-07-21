@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
+import sysconfig
 from pathlib import Path
 from typing import Any
 
@@ -13,8 +15,8 @@ from wizhorse.schemas.cases import Case
 
 
 def run_capa(case: Case) -> CapaResult:
-    capa_path = shutil.which("capa")
-    if capa_path is None:
+    capa_command = _resolve_capa_command()
+    if capa_command is None:
         return _persist(
             case,
             CapaResult(
@@ -29,9 +31,19 @@ def run_capa(case: Case) -> CapaResult:
         )
 
     sample_path = get_sample_path(case)
+    rules_path = config.capa_rules_path()
+    signatures_path = config.capa_signatures_path()
     try:
         completed = subprocess.run(
-            [capa_path, "-j", str(sample_path)],
+            [
+                *capa_command,
+                "-r",
+                str(rules_path),
+                "-s",
+                str(signatures_path),
+                "-j",
+                str(sample_path),
+            ],
             stderr=subprocess.PIPE,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
@@ -116,33 +128,77 @@ def _extract_matches(payload: dict[str, Any]) -> list[CapaMatch]:
         if not isinstance(rule_payload, dict):
             continue
         meta = rule_payload.get("meta") if isinstance(rule_payload.get("meta"), dict) else {}
-        namespace = meta.get("namespace") if isinstance(meta, dict) else None
-        locations = sorted(_collect_locations(rule_payload))
+        namespace = meta.get("namespace") if isinstance(meta, dict) else ""
+        locations = sorted(_collect_match_locations(rule_payload.get("matches")))
         matches.append(
             CapaMatch(
-                rule=str(rule_name),
-                namespace=str(namespace) if namespace is not None else None,
+                rule_name=str(rule_name),
+                namespace=str(namespace) if namespace is not None else "",
                 locations=locations,
             )
         )
     return matches
 
 
-def _collect_locations(value: Any) -> set[str]:
+def _collect_match_locations(raw_matches: Any) -> set[str]:
+    locations: set[str] = set()
+    if not isinstance(raw_matches, list):
+        return locations
+
+    for raw_match in raw_matches:
+        if isinstance(raw_match, list) and raw_match:
+            primary_location = _format_capa_location(raw_match[0])
+            if primary_location is not None:
+                locations.add(primary_location)
+            for node in raw_match[1:]:
+                locations.update(_collect_nested_locations(node))
+        else:
+            fallback_location = _format_capa_location(raw_match)
+            if fallback_location is not None:
+                locations.add(fallback_location)
+    return locations
+
+
+def _collect_nested_locations(value: Any) -> set[str]:
     locations: set[str] = set()
     if isinstance(value, dict):
-        if "address" in value:
-            locations.add(str(value["address"]))
-        if "value" in value and isinstance(value["value"], str) and value["value"].startswith("0x"):
-            locations.add(value["value"])
+        if isinstance(value.get("locations"), list):
+            for raw_location in value["locations"]:
+                formatted = _format_capa_location(raw_location)
+                if formatted is not None:
+                    locations.add(formatted)
         for child in value.values():
-            locations.update(_collect_locations(child))
+            locations.update(_collect_nested_locations(child))
     elif isinstance(value, list):
         for child in value:
-            locations.update(_collect_locations(child))
-    elif isinstance(value, str) and value.startswith("0x"):
-        locations.add(value)
+            locations.update(_collect_nested_locations(child))
     return locations
+
+
+def _format_capa_location(raw_location: Any) -> str | None:
+    if not isinstance(raw_location, dict):
+        return None
+
+    location_type = raw_location.get("type")
+    raw_value = raw_location.get("value")
+    if location_type == "no address":
+        return None
+    if location_type == "dn token" and isinstance(raw_value, int):
+        return f"0x{raw_value:08x}"
+    if (
+        location_type == "dn token offset"
+        and isinstance(raw_value, list)
+        and len(raw_value) == 2
+        and all(isinstance(part, int) for part in raw_value)
+    ):
+        return f"0x{raw_value[0]:08x}+0x{raw_value[1]:x}"
+    if location_type == "file" and isinstance(raw_value, int):
+        return f"file+0x{raw_value:x}"
+    if isinstance(raw_value, int):
+        return f"0x{raw_value:x}"
+    if isinstance(raw_value, str):
+        return raw_value
+    return None
 
 
 def _extract_warnings(payload: dict[str, Any]) -> list[str]:
@@ -153,6 +209,20 @@ def _extract_warnings(payload: dict[str, Any]) -> list[str]:
     if not isinstance(warnings, list):
         return []
     return [str(warning) for warning in warnings]
+
+
+def _resolve_capa_command() -> list[str] | None:
+    capa_path = shutil.which("capa")
+    if capa_path is not None:
+        return [capa_path]
+
+    scripts_dir = sysconfig.get_path("scripts")
+    if scripts_dir:
+        candidate = Path(scripts_dir) / ("capa.exe" if sys.platform == "win32" else "capa")
+        if candidate.is_file():
+            return [str(candidate)]
+
+    return [sys.executable, "-m", "capa.main"]
 
 
 def _looks_unsupported(message: str) -> bool:

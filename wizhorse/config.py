@@ -25,6 +25,14 @@ def ghidra_import_timeout_seconds() -> int:
     return _int_env("WIZHORSE_GHIDRA_IMPORT_TIMEOUT_SECONDS", 600)
 
 
+def ghidra_fast_managed_import_enabled() -> bool:
+    return _bool_env("WIZHORSE_GHIDRA_FAST_MANAGED_IMPORT_ENABLED", True)
+
+
+def ghidra_managed_analysis_timeout_per_file_seconds() -> int:
+    return _int_env("WIZHORSE_GHIDRA_MANAGED_ANALYSIS_TIMEOUT_PER_FILE_SECONDS", 45)
+
+
 def ghidra_decompile_timeout_seconds() -> int:
     return _int_env("WIZHORSE_GHIDRA_DECOMPILE_TIMEOUT_SECONDS", 180)
 
@@ -41,6 +49,18 @@ def capa_timeout_seconds() -> int:
     return _int_env("WIZHORSE_CAPA_TIMEOUT_SECONDS", 180)
 
 
+def capa_rules_path() -> Path:
+    default_rules_dir = Path(__file__).resolve().parent.parent / "capa-rules"
+    return Path(os.getenv("WIZHORSE_CAPA_RULES_PATH", default_rules_dir)).expanduser()
+
+
+def capa_signatures_path() -> Path:
+    default_signatures_dir = Path(__file__).resolve().parent.parent / "capa-src" / "sigs"
+    return Path(
+        os.getenv("WIZHORSE_CAPA_SIGNATURES_PATH", default_signatures_dir)
+    ).expanduser()
+
+
 def yara_rules_dir() -> Path:
     default_rules_dir = Path(__file__).resolve().parent / "workers" / "yara_rules"
     return Path(os.getenv("WIZHORSE_YARA_RULES_DIR", default_rules_dir)).expanduser()
@@ -54,3 +74,15 @@ def _int_env(name: str, default: int) -> int:
         return int(raw_value)
     except ValueError:
         return default
+
+
+def _bool_env(name: str, default: bool) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    lowered = raw_value.strip().lower()
+    if lowered in {"1", "true", "yes", "on"}:
+        return True
+    if lowered in {"0", "false", "no", "off"}:
+        return False
+    return default

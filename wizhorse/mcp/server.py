@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import re
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -7,7 +9,9 @@ from pydantic import ValidationError
 
 from wizhorse.daemon import cases, evidence, policy
 from wizhorse.reports.generator import generate_report as generate_case_report
+from wizhorse.schemas.capa import CapaResult
 from wizhorse.schemas.evidence import Finding
+from wizhorse.schemas.ghidra import FunctionInfo
 from wizhorse.workers.capa import run_capa as run_capa_worker
 from wizhorse.workers.ghidra import GhidraWorker
 from wizhorse.workers.triage import run_triage
@@ -15,6 +19,9 @@ from wizhorse.workers.yara import run_yara as run_yara_worker
 
 mcp = FastMCP("wizhorse")
 ghidra_worker = GhidraWorker()
+_DOTNET_TOKEN_PATTERN = re.compile(
+    r"^0x(?P<token>06[0-9a-fA-F]{6})(?:\+0x(?P<offset>[0-9a-fA-F]+))?$"
+)
 
 
 @mcp.tool()
@@ -103,6 +110,37 @@ def run_capa(case_id: str) -> dict:
     except OSError as exc:
         return _error(f"could not run capa: {exc}")
     return {"ok": True, "capa": result.model_dump()}
+
+
+@mcp.tool()
+def get_capa_locations(case_id: str, capability_substring: str) -> dict:
+    """Return stored capa match locations for capabilities matching a substring."""
+    case = _lookup_case(case_id)
+    if isinstance(case, dict):
+        return case
+    if not isinstance(capability_substring, str) or not capability_substring.strip():
+        return _error("capability_substring must be a non-empty string")
+    if policy.check("get_capa_locations", {"case_id": case.case_id}) == "DENY":
+        return _error("get_capa_locations denied by policy: case or stored sample is unavailable")
+
+    try:
+        capa_result = _load_capa_result(case)
+    except (FileNotFoundError, OSError, ValidationError) as exc:
+        return _error(f"could not load stored capa result: {exc}")
+
+    needle = capability_substring.strip().lower()
+    matches = []
+    for match in capa_result.matches:
+        if needle not in match.rule_name.lower():
+            continue
+        matches.append(
+            {
+                "rule_name": match.rule_name,
+                "namespace": match.namespace,
+                "locations": _resolve_capa_locations(case, match.locations),
+            }
+        )
+    return {"ok": True, "matches": matches}
 
 
 @mcp.tool()
@@ -231,6 +269,47 @@ def _lookup_case(case_id: str):
         return _error(f"unknown case_id: {case_id}")
 
 
+def _load_capa_result(case: cases.Case) -> CapaResult:
+    path = cases.SAMPLES_DIR / case.sample_sha256 / "capa.json"
+    if not path.is_file():
+        raise FileNotFoundError(f"stored capa result is missing for case_id: {case.case_id}")
+    return CapaResult.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+def _resolve_capa_locations(case: cases.Case, locations: list[str]) -> list[str]:
+    if not locations:
+        return []
+    if not any(_DOTNET_TOKEN_PATTERN.match(location) for location in locations):
+        return locations
+
+    try:
+        functions = ghidra_worker.list_functions(case)
+    except (FileNotFoundError, RuntimeError, TimeoutError, OSError, ValidationError):
+        return locations
+
+    resolved = []
+    for location in locations:
+        resolved.append(_resolve_single_capa_location(location, functions))
+    return resolved
+
+
+def _resolve_single_capa_location(location: str, functions: list[FunctionInfo]) -> str:
+    match = _DOTNET_TOKEN_PATTERN.match(location)
+    if match is None:
+        return location
+
+    token_value = int(match.group("token"), 16)
+    row_index = token_value & 0x00FFFFFF
+    if row_index < 1 or row_index > len(functions):
+        return location
+
+    function_address = int(functions[row_index - 1].address, 16)
+    offset_text = match.group("offset")
+    if offset_text is not None:
+        function_address += int(offset_text, 16)
+    return f"0x{function_address:x}"
+
+
 def _case_summary(case: cases.Case) -> dict:
     return {
         "case_id": case.case_id,
@@ -260,6 +339,8 @@ def _format_validation_error(error: dict[str, Any]) -> str:
         return f"confidence must be a number between 0 and 1, got {_describe_value(value)}"
     if field == "confidence" and error_type in {"greater_than_equal", "less_than_equal"}:
         return f"confidence must be between 0 and 1, got {_describe_value(value)}"
+    if field == "confidence" and error_type == "confidence_value":
+        return str(error.get("msg", "confidence is invalid"))
     if error_type == "extra_forbidden":
         return f"{field} is not allowed"
     if error_type == "missing":

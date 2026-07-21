@@ -6,3 +6,4 @@ pytest_tmp*/
 .pytest_tmp*/
 storage/
 analysis/
+capa-src/

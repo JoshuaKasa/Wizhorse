@@ -21,3 +21,6 @@ include = ["wizhorse*"]
 "wizhorse.workers.ghidra_scripts" = ["*.java", "*.py"]
 "wizhorse.workers" = ["yara_rules/*.yar", "yara_rules/*.yara"]
 "wizhorse.reports" = ["templates/*.j2"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

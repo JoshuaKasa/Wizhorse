@@ -4,6 +4,7 @@ import json
 import shutil
 import subprocess
 import sys
+from types import SimpleNamespace
 from pathlib import Path
 
 import pytest
@@ -13,9 +14,12 @@ from mcp.client.stdio import stdio_client
 from wizhorse import config
 from wizhorse.daemon import cases, evidence
 from wizhorse.daemon.scheduler import GhidraScheduler
+from wizhorse.mcp.server import get_capa_locations, record_finding
 from wizhorse.reports.generator import generate_report
 from wizhorse.schemas.evidence import Finding
 from wizhorse.workers.capa import run_capa
+from wizhorse.workers import capa as capa_worker
+from wizhorse.workers.ghidra import _build_headless_env
 from wizhorse.workers.triage import run_triage
 from wizhorse.workers.yara import run_yara
 
@@ -34,7 +38,7 @@ async def test_mcp_static_triage_workflow(tmp_path, monkeypatch):
     monkeypatch.setenv("WIZHORSE_ALLOWED_ROOTS", str(tmp_path))
 
     server_params = StdioServerParameters(
-        command="python",
+        command=sys.executable,
         args=["-m", "wizhorse.mcp.server"],
         env={"WIZHORSE_ALLOWED_ROOTS": str(tmp_path)},
     )
@@ -90,15 +94,38 @@ async def test_mcp_static_triage_workflow(tmp_path, monkeypatch):
             assert finding_result["ok"] is True
             assert finding_result["finding_id"]
 
+            shorthand_result = _content_as_json(
+                await session.call_tool(
+                    "record_finding",
+                    {
+                        "case_id": case["case_id"],
+                        "finding": {
+                            "claim": "string confidence shorthand should be accepted",
+                            "status": "supported",
+                            "confidence": "high",
+                            "evidence": [
+                                {
+                                    "type": "test",
+                                    "observation": "string confidence and type alias fixture",
+                                }
+                            ],
+                            "limitations": [],
+                        },
+                    },
+                )
+            )
+            assert shorthand_result["ok"] is True
+            assert shorthand_result["finding_id"]
+
             invalid_result = _content_as_json(
                 await session.call_tool(
                     "record_finding",
                     {
                         "case_id": case["case_id"],
                         "finding": {
-                            "claim": "bad confidence should be rejected",
+                            "claim": "unknown confidence label should be rejected",
                             "status": "supported",
-                            "confidence": "high",
+                            "confidence": "not-a-real-value",
                             "evidence": [
                                 {
                                     "source": "test",
@@ -112,7 +139,7 @@ async def test_mcp_static_triage_workflow(tmp_path, monkeypatch):
             )
             assert invalid_result["ok"] is False
             assert "confidence" in invalid_result["error"]
-            assert "must be a number" in invalid_result["error"]
+            assert "low, medium, high" in invalid_result["error"]
             assert "ValidationError" not in invalid_result["error"]
             assert "pydantic" not in invalid_result["error"].lower()
 
@@ -157,6 +184,148 @@ def test_capa_and_yara_workers_return_schema_shape(tmp_path, monkeypatch):
     assert isinstance(yara_result.warnings, list)
 
 
+def test_run_capa_preserves_match_locations_from_json(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    sample_path = tmp_path / "synthetic.bin"
+    sample_path.write_bytes(b"MZ" + b"\x00" * 128)
+    case = cases.create_case(str(sample_path))
+    rules_path = tmp_path / "rules"
+    signatures_path = tmp_path / "sigs"
+    rules_path.mkdir()
+    signatures_path.mkdir()
+
+    payload = {
+        "meta": {"warnings": []},
+        "rules": {
+            "invoke .NET assembly method": {
+                "meta": {"namespace": "load-code/dotnet"},
+                "matches": [
+                    [
+                        {"type": "dn token", "value": 100663315},
+                        {
+                            "success": True,
+                            "locations": [],
+                            "children": [
+                                {
+                                    "success": True,
+                                    "locations": [
+                                        {"type": "dn token offset", "value": [100663315, 48]}
+                                    ],
+                                    "children": [],
+                                }
+                            ],
+                        },
+                    ],
+                    [
+                        {"type": "absolute", "value": 0x10003990},
+                        {
+                            "success": True,
+                            "locations": [{"type": "absolute", "value": 0x100039a5}],
+                            "children": [],
+                        },
+                    ],
+                ],
+            }
+        },
+    }
+
+    monkeypatch.setattr(capa_worker, "_resolve_capa_command", lambda: ["capa"])
+    monkeypatch.setattr(capa_worker.config, "capa_rules_path", lambda: rules_path)
+    monkeypatch.setattr(capa_worker.config, "capa_signatures_path", lambda: signatures_path)
+    captured_command = {}
+
+    def fake_run(*args, **kwargs):
+        captured_command["args"] = args[0]
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(payload),
+            stderr="",
+        )
+
+    monkeypatch.setattr(
+        capa_worker.subprocess,
+        "run",
+        fake_run,
+    )
+
+    result = run_capa(case)
+
+    assert captured_command["args"] == [
+        "capa",
+        "-r",
+        str(rules_path),
+        "-s",
+        str(signatures_path),
+        "-j",
+        str(cases.get_sample_path(case)),
+    ]
+    assert result.matched is True
+    assert result.matches[0].rule_name == "invoke .NET assembly method"
+    assert result.matches[0].namespace == "load-code/dotnet"
+    assert result.matches[0].locations == [
+        "0x06000013",
+        "0x06000013+0x30",
+        "0x10003990",
+        "0x100039a5",
+    ]
+
+
+def test_get_capa_locations_filters_saved_matches(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    sample_path = tmp_path / "synthetic.bin"
+    sample_path.write_bytes(b"MZ" + b"\x00" * 128)
+    case = cases.create_case(str(sample_path))
+
+    capa_path = cases.SAMPLES_DIR / case.sample_sha256 / "capa.json"
+    capa_path.write_text(
+        json.dumps(
+            {
+                "case_id": case.case_id,
+                "sample_sha256": case.sample_sha256,
+                "supported": True,
+                "matched": True,
+                "matches": [
+                    {
+                        "rule_name": "invoke .NET assembly method",
+                        "namespace": "load-code/dotnet",
+                        "locations": ["0x1000231c", "0x10002346"],
+                    },
+                    {
+                        "rule_name": "load .NET assembly",
+                        "namespace": "load-code/dotnet",
+                        "locations": ["0x100022d8"],
+                    },
+                    {
+                        "rule_name": "delete file",
+                        "namespace": "host-interaction/file-system/delete",
+                        "locations": ["0x1006642a"],
+                    },
+                ],
+                "warnings": [],
+                "error": None,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    result = get_capa_locations(case.case_id, "assembly")
+
+    assert result["ok"] is True
+    assert result["matches"] == [
+        {
+            "rule_name": "invoke .NET assembly method",
+            "namespace": "load-code/dotnet",
+            "locations": ["0x1000231c", "0x10002346"],
+        },
+        {
+            "rule_name": "load .NET assembly",
+            "namespace": "load-code/dotnet",
+            "locations": ["0x100022d8"],
+        },
+    ]
+
+
 def test_generate_report_end_to_end(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     sample_path = tmp_path / "synthetic.bin"
@@ -189,6 +358,119 @@ def test_generate_report_end_to_end(tmp_path, monkeypatch):
     assert "Synthetic sample has a stored static finding." in report.content
 
 
+def test_finding_accepts_confidence_string_and_type_alias():
+    finding = Finding.model_validate(
+        {
+            "claim": "String confidence and evidence type alias are normalized.",
+            "status": "supported",
+            "confidence": "high",
+            "evidence": [
+                {
+                    "type": "decompile_function",
+                    "artifact_id": "artifact-1",
+                    "function_address": "140001000",
+                    "observation": "Alias input should map to source.",
+                }
+            ],
+            "limitations": [],
+        }
+    )
+
+    assert finding.confidence == pytest.approx(0.85)
+    assert finding.evidence[0].source == "decompile_function"
+
+
+def test_record_finding_persists_normalized_confidence_and_type_alias(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    sample_path = tmp_path / "synthetic.bin"
+    sample_path.write_bytes(b"MZ" + b"\x00" * 128)
+    case = cases.create_case(str(sample_path))
+
+    result = evidence.record_finding(
+        case.case_id,
+        Finding.model_validate(
+            {
+                "claim": "Normalized finding is persisted.",
+                "status": "supported",
+                "confidence": "high",
+                "evidence": [
+                    {
+                        "type": "decompile_function",
+                        "artifact_id": case.sample_sha256,
+                        "function_address": "140001000",
+                        "observation": "Persisted with normalized source alias.",
+                    }
+                ],
+                "limitations": [],
+            }
+        ),
+    )
+
+    assert result
+
+    findings_dir = cases.SAMPLES_DIR / case.sample_sha256 / "findings"
+    persisted_files = sorted(findings_dir.glob("*.json"))
+    assert len(persisted_files) == 1
+    saved_finding = json.loads(persisted_files[0].read_text(encoding="utf-8"))
+
+    assert saved_finding["confidence"] == pytest.approx(0.85)
+    assert saved_finding["evidence"][0]["source"] == "decompile_function"
+    assert "type" not in saved_finding["evidence"][0]
+
+
+def test_record_finding_rejects_unknown_confidence_with_clear_message(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    sample_path = tmp_path / "synthetic.bin"
+    sample_path.write_bytes(b"MZ" + b"\x00" * 128)
+    case = cases.create_case(str(sample_path))
+
+    result = record_finding(
+        case.case_id,
+        {
+            "claim": "Unknown confidence label should fail cleanly.",
+            "status": "supported",
+            "confidence": "not-a-real-value",
+            "evidence": [
+                {
+                    "source": "test",
+                    "observation": "Control fixture.",
+                }
+            ],
+            "limitations": [],
+        },
+    )
+
+    assert result["ok"] is False
+    assert (
+        result["error"]
+        == "invalid finding: confidence must be one of low, medium, high or a number between 0 and 1, got not-a-real-value"
+    )
+
+
+def test_build_headless_env_sets_java_and_writable_profile_dirs(tmp_path, monkeypatch):
+    project_dir = tmp_path / "ghidra_project"
+    project_dir.mkdir()
+
+    monkeypatch.delenv("APPDATA", raising=False)
+    monkeypatch.delenv("LOCALAPPDATA", raising=False)
+    monkeypatch.delenv("USERPROFILE", raising=False)
+    monkeypatch.delenv("HOME", raising=False)
+    monkeypatch.delenv("TEMP", raising=False)
+    monkeypatch.delenv("TMP", raising=False)
+    monkeypatch.setenv("PATH", "")
+
+    env = _build_headless_env(project_dir)
+
+    assert env["JAVA_HOME"] == str(config.java_home())
+    assert env["PATH"].split(";")[0] == str(config.java_home() / "bin")
+    assert env["APPDATA"] == str(project_dir / ".ghidra_env" / "Roaming")
+    assert env["LOCALAPPDATA"] == str(project_dir / ".ghidra_env" / "Local")
+    assert env["USERPROFILE"] == str(project_dir / ".ghidra_env" / "Profile")
+    assert env["HOME"] == str(project_dir / ".ghidra_env" / "Profile")
+    assert env["TEMP"] == str(project_dir / ".ghidra_env" / "Temp")
+    assert env["TMP"] == str(project_dir / ".ghidra_env" / "Temp")
+
+
 @pytest.mark.anyio
 async def test_mcp_ghidra_workflow_on_harmless_binary(tmp_path, monkeypatch):
     if not config.analyze_headless_path().is_file():
@@ -216,7 +498,7 @@ async def test_mcp_ghidra_workflow_on_harmless_binary(tmp_path, monkeypatch):
     monkeypatch.setenv("WIZHORSE_ALLOWED_ROOTS", str(tmp_path))
 
     server_params = StdioServerParameters(
-        command="python",
+        command=sys.executable,
         args=["-m", "wizhorse.mcp.server"],
         env={"WIZHORSE_ALLOWED_ROOTS": str(tmp_path)},
     )
@@ -234,7 +516,7 @@ async def test_mcp_ghidra_workflow_on_harmless_binary(tmp_path, monkeypatch):
             import_result = _content_as_json(
                 await session.call_tool("import_and_analyze", {"case_id": case_id})
             )
-            assert import_result["ok"] is True
+            assert import_result["ok"] is True, import_result
             assert import_result["result"]["analyzed"] is True
 
             functions_result = _content_as_json(

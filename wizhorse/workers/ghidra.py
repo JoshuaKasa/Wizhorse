@@ -18,6 +18,7 @@ from wizhorse.schemas.ghidra import (
     FunctionInfo,
     ImportResult,
 )
+from wizhorse.workers.triage import run_triage
 
 PROJECT_NAME = "wizhorse"
 PROGRAM_NAME = "sample.bin"
@@ -45,18 +46,30 @@ class GhidraWorker:
 
         project_dir.mkdir(parents=True, exist_ok=True)
         output_path = _temp_json_path(project_dir)
+        managed_analysis = _managed_import_settings(case)
         args = [
             str(project_dir),
             PROJECT_NAME,
             "-import",
             str(sample_path.resolve()),
             "-overwrite",
-            "-scriptPath",
-            str(SCRIPT_DIR),
-            "-postScript",
-            "wh_import_result.java",
-            str(output_path),
         ]
+        if managed_analysis is not None:
+            args.extend(
+                [
+                    "-analysisTimeoutPerFile",
+                    str(managed_analysis["analysis_timeout_per_file_seconds"]),
+                ]
+            )
+        args.extend(
+            [
+                "-scriptPath",
+                str(SCRIPT_DIR),
+                "-postScript",
+                "wh_import_result.java",
+                str(output_path),
+            ]
+        )
         self._run_headless(
             case=case,
             operation="import",
@@ -65,6 +78,12 @@ class GhidraWorker:
             timeout_seconds=config.ghidra_import_timeout_seconds(),
         )
         payload = _read_json(output_path)
+        warnings = list(payload.get("warnings", []))
+        if managed_analysis is not None:
+            warnings.append(
+                "managed sample detected by triage; capped Ghidra auto-analysis "
+                f"at {managed_analysis['analysis_timeout_per_file_seconds']}s per file"
+            )
         result = ImportResult.model_validate(
             {
                 "case_id": case.case_id,
@@ -73,7 +92,7 @@ class GhidraWorker:
                 "program_name": payload.get("program_name", PROGRAM_NAME),
                 "analyzed": bool(payload.get("analyzed", True)),
                 "skipped": False,
-                "warnings": payload.get("warnings", []),
+                "warnings": warnings,
             }
         )
         marker_path.write_text(result.model_dump_json(indent=2), encoding="utf-8")
@@ -164,10 +183,7 @@ class GhidraWorker:
         if not analyze_headless.is_file():
             raise FileNotFoundError(f"Ghidra analyzeHeadless.bat not found: {analyze_headless}")
 
-        env = os.environ.copy()
-        resolved_java_home = config.java_home()
-        if resolved_java_home.exists():
-            env["JAVA_HOME"] = str(resolved_java_home)
+        env = _build_headless_env(project_dir)
 
         command = ["cmd.exe", "/c", str(analyze_headless), *args]
         scheduler.run_headless(
@@ -215,3 +231,65 @@ def _read_json(path: Path) -> Any:
     except (OSError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"Ghidra script did not produce valid JSON at {path}") from exc
 
+
+def _managed_import_settings(case: Case) -> dict[str, int] | None:
+    if not config.ghidra_fast_managed_import_enabled():
+        return None
+
+    triage = _load_or_create_triage(case)
+    if not bool(triage.get("managed")):
+        return None
+
+    return {
+        "analysis_timeout_per_file_seconds": max(
+            1, config.ghidra_managed_analysis_timeout_per_file_seconds()
+        )
+    }
+
+
+def _load_or_create_triage(case: Case) -> dict[str, Any]:
+    triage_path = _sample_dir(case) / "static_triage.json"
+    if triage_path.is_file():
+        try:
+            triage = _read_json(triage_path)
+            if "managed" in triage:
+                return triage
+        except RuntimeError:
+            pass
+    return run_triage(case)
+
+
+def _build_headless_env(project_dir: Path) -> dict[str, str]:
+    env = os.environ.copy()
+    project_dir = project_dir.resolve()
+
+    resolved_java_home = config.java_home()
+    if resolved_java_home.exists():
+        env["JAVA_HOME"] = str(resolved_java_home)
+
+    java_home = env.get("JAVA_HOME")
+    if java_home:
+        java_bin = Path(java_home) / "bin"
+        current_path = env.get("PATH", "")
+        path_parts = [part for part in current_path.split(os.pathsep) if part]
+        if str(java_bin) not in path_parts:
+            env["PATH"] = os.pathsep.join([str(java_bin), *path_parts]) if path_parts else str(java_bin)
+
+    ghidra_env_root = project_dir / ".ghidra_env"
+    roaming_dir = ghidra_env_root / "Roaming"
+    local_dir = ghidra_env_root / "Local"
+    profile_dir = ghidra_env_root / "Profile"
+    temp_dir = ghidra_env_root / "Temp"
+    for path in (roaming_dir, local_dir, profile_dir, temp_dir):
+        path.mkdir(parents=True, exist_ok=True)
+
+    # Use a project-local writable profile for headless Ghidra so tests and
+    # restricted environments don't depend on inherited user-profile paths.
+    env["APPDATA"] = str(roaming_dir)
+    env["LOCALAPPDATA"] = str(local_dir)
+    env["USERPROFILE"] = str(profile_dir)
+    env["HOME"] = str(profile_dir)
+    env["TEMP"] = str(temp_dir)
+    env["TMP"] = str(temp_dir)
+
+    return env
