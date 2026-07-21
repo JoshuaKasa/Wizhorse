@@ -4,6 +4,12 @@ __pycache__/
 .pytest_cache/
 pytest_tmp*/
 .pytest_tmp*/
+.tmp_*/
+wizhorse-ghidra-*/
+wizhorse-seq-*/
+[0-9]*
+analysis_inputs/LethalMenu.dll
+analysis_inputs/smi.exe
 storage/
 analysis/
 capa-src/
