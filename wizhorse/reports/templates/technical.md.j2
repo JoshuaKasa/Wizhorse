@@ -1,0 +1,101 @@
+# Wizhorse Technical Report
+
+## Sample Identity
+
+- Case ID: `{{ case.case_id }}`
+- SHA-256: `{{ case.sample_sha256 }}`
+- Original name: `{{ case.original_name }}`
+- Format: `{% if triage %}{{ triage.get("format", "unknown") }}{% else %}unknown{% endif %}`
+
+## Verdict
+
+`{{ verdict }}`
+
+{% if not findings %}
+No findings were recorded. Verdict is `insufficient evidence`.
+{% endif %}
+
+## Findings
+
+{% if findings %}
+{% for finding in findings %}
+### Finding {{ loop.index }}
+
+- Claim: {{ finding.claim }}
+- Status: `{{ finding.status }}`
+- Confidence: `{{ "%.2f"|format(finding.confidence) }}`
+
+Evidence:
+{% for item in finding.evidence %}
+- `{{ item.source }}`{% if item.artifact_id %} artifact `{{ item.artifact_id }}`{% endif %}{% if item.function_address %} function `{{ item.function_address }}`{% endif %}: {{ item.observation }}
+{% endfor %}
+
+Limitations:
+{% for limitation in finding.limitations %}
+- {{ limitation }}
+{% endfor %}
+
+{% endfor %}
+{% else %}
+- No recorded findings.
+{% endif %}
+
+## Static Analysis Summary
+
+### Triage
+
+{% if triage %}
+- Format: `{{ triage.get("format", "unknown") }}`
+- File size: `{{ triage.get("file_size", "unknown") }}`
+- Entropy: `{{ triage.get("entropy", "unknown") }}`
+- Warnings: {% if triage.get("warnings") %}{{ triage.get("warnings")|join(", ") }}{% else %}none{% endif %}
+{% else %}
+- No stored static triage result.
+{% endif %}
+
+### capa
+
+{% if capa %}
+- Supported: `{{ capa.get("supported") }}`
+- Matched: `{{ capa.get("matched") }}`
+- Error: `{{ capa.get("error") or "none" }}`
+{% if capa.get("matches") %}
+{% for match in capa.get("matches", []) %}
+- {{ match.get("rule") }}{% if match.get("namespace") %} (`{{ match.get("namespace") }}`){% endif %}: {{ match.get("locations", [])|join(", ") }}
+{% endfor %}
+{% else %}
+- No capa capability matches recorded.
+{% endif %}
+{% else %}
+- No stored capa result.
+{% endif %}
+
+### YARA
+
+{% if yara %}
+- Rule directory: `{{ yara.get("rule_dir") }}`
+- Matched: `{{ yara.get("matched") }}`
+- Error: `{{ yara.get("error") or "none" }}`
+{% if yara.get("matches") %}
+{% for match in yara.get("matches", []) %}
+- {{ match.get("rule") }}{% if match.get("tags") %} tags: {{ match.get("tags")|join(", ") }}{% endif %}
+{% endfor %}
+{% else %}
+- No YARA rule matches recorded.
+{% endif %}
+{% else %}
+- No stored YARA result.
+{% endif %}
+
+## Limitations
+
+- This report uses only previously stored static-analysis artifacts and recorded findings.
+- It does not execute samples, run a sandbox, attach a debugger, or infer behavior not represented in stored evidence.
+- Missing triage, capa, YARA, or decompiler artifacts reduce confidence and should be treated as analysis gaps.
+
+## Recommended Next Steps
+
+- Review findings and evidence manually.
+- Review any referenced decompiled functions and cross-references.
+- Add or tune YARA rules for the specific investigation scope.
+- Consider dynamic analysis if available and appropriate in a controlled environment.

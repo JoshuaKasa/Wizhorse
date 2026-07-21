@@ -1,0 +1,25 @@
+{
+  "name": "wizhorse",
+  "version": "0.1.0+codex.20260721143316",
+  "description": "Evidence-driven static malware triage assistant",
+  "author": {
+    "name": "Wizhorse"
+  },
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Wizhorse",
+    "shortDescription": "Evidence-driven static malware triage",
+    "longDescription": "Create malware triage cases, run static-only file triage, and record evidence-backed findings over MCP.",
+    "developerName": "Wizhorse",
+    "category": "Security",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Create a case and statically triage this sample.",
+      "Record evidence-backed findings for this case."
+    ]
+  }
+}

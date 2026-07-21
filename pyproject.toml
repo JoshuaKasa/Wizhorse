@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wizhorse"
+version = "0.1.0"
+description = "Evidence-driven static malware triage assistant"
+requires-python = ">=3.10"
+dependencies = [
+    "Jinja2",
+    "mcp",
+    "pydantic>=2",
+    "yara-python",
+]
+
+[tool.setuptools.packages.find]
+include = ["wizhorse*"]
+
+[tool.setuptools.package-data]
+"wizhorse.workers.ghidra_scripts" = ["*.java", "*.py"]
+"wizhorse.workers" = ["yara_rules/*.yar", "yara_rules/*.yara"]
+"wizhorse.reports" = ["templates/*.j2"]
