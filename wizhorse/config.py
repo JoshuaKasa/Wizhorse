@@ -3,22 +3,25 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-DEFAULT_GHIDRA_INSTALL_DIR = (
-    r"C:\Users\jizos\Documents\Programming\Reverse engineering\Ghidra"
-)
-DEFAULT_JAVA_HOME = r"C:\Program Files\Eclipse Adoptium\jdk-21.0.10.7-hotspot"
+def ghidra_install_dir() -> Path | None:
+    raw_value = os.getenv("GHIDRA_INSTALL_DIR")
+    if not raw_value:
+        return None
+    return Path(raw_value).expanduser()
 
 
-def ghidra_install_dir() -> Path:
-    return Path(os.getenv("GHIDRA_INSTALL_DIR", DEFAULT_GHIDRA_INSTALL_DIR)).expanduser()
+def analyze_headless_path() -> Path | None:
+    install_dir = ghidra_install_dir()
+    if install_dir is None:
+        return None
+    return install_dir / "support" / "analyzeHeadless.bat"
 
 
-def analyze_headless_path() -> Path:
-    return ghidra_install_dir() / "support" / "analyzeHeadless.bat"
-
-
-def java_home() -> Path:
-    return Path(os.getenv("JAVA_HOME", DEFAULT_JAVA_HOME)).expanduser()
+def java_home() -> Path | None:
+    raw_value = os.getenv("JAVA_HOME")
+    if not raw_value:
+        return None
+    return Path(raw_value).expanduser()
 
 
 def ghidra_import_timeout_seconds() -> int:
@@ -54,11 +57,15 @@ def capa_rules_path() -> Path:
     return Path(os.getenv("WIZHORSE_CAPA_RULES_PATH", default_rules_dir)).expanduser()
 
 
-def capa_signatures_path() -> Path:
+def capa_signatures_path() -> Path | None:
+    raw_value = os.getenv("WIZHORSE_CAPA_SIGNATURES_PATH")
+    if raw_value:
+        return Path(raw_value).expanduser()
+
     default_signatures_dir = Path(__file__).resolve().parent.parent / "capa-src" / "sigs"
-    return Path(
-        os.getenv("WIZHORSE_CAPA_SIGNATURES_PATH", default_signatures_dir)
-    ).expanduser()
+    if default_signatures_dir.exists():
+        return default_signatures_dir
+    return None
 
 
 def yara_rules_dir() -> Path:

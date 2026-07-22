@@ -33,17 +33,17 @@ def run_capa(case: Case) -> CapaResult:
     sample_path = get_sample_path(case)
     rules_path = config.capa_rules_path()
     signatures_path = config.capa_signatures_path()
+    command = [
+        *capa_command,
+        "-r",
+        str(rules_path),
+    ]
+    if signatures_path is not None:
+        command.extend(["-s", str(signatures_path)])
+    command.extend(["-j", str(sample_path)])
     try:
         completed = subprocess.run(
-            [
-                *capa_command,
-                "-r",
-                str(rules_path),
-                "-s",
-                str(signatures_path),
-                "-j",
-                str(sample_path),
-            ],
+            command,
             stderr=subprocess.PIPE,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,

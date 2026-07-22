@@ -450,6 +450,8 @@ def test_record_finding_rejects_unknown_confidence_with_clear_message(tmp_path, 
 def test_build_headless_env_sets_java_and_writable_profile_dirs(tmp_path, monkeypatch):
     project_dir = tmp_path / "ghidra_project"
     project_dir.mkdir()
+    fake_java_home = tmp_path / "jdk"
+    (fake_java_home / "bin").mkdir(parents=True)
 
     monkeypatch.delenv("APPDATA", raising=False)
     monkeypatch.delenv("LOCALAPPDATA", raising=False)
@@ -457,12 +459,13 @@ def test_build_headless_env_sets_java_and_writable_profile_dirs(tmp_path, monkey
     monkeypatch.delenv("HOME", raising=False)
     monkeypatch.delenv("TEMP", raising=False)
     monkeypatch.delenv("TMP", raising=False)
+    monkeypatch.setenv("JAVA_HOME", str(fake_java_home))
     monkeypatch.setenv("PATH", "")
 
     env = _build_headless_env(project_dir)
 
-    assert env["JAVA_HOME"] == str(config.java_home())
-    assert env["PATH"].split(";")[0] == str(config.java_home() / "bin")
+    assert env["JAVA_HOME"] == str(fake_java_home)
+    assert env["PATH"].split(";")[0] == str(fake_java_home / "bin")
     assert env["APPDATA"] == str(project_dir / ".ghidra_env" / "Roaming")
     assert env["LOCALAPPDATA"] == str(project_dir / ".ghidra_env" / "Local")
     assert env["USERPROFILE"] == str(project_dir / ".ghidra_env" / "Profile")
@@ -473,7 +476,8 @@ def test_build_headless_env_sets_java_and_writable_profile_dirs(tmp_path, monkey
 
 @pytest.mark.anyio
 async def test_mcp_ghidra_workflow_on_harmless_binary(tmp_path, monkeypatch):
-    if not config.analyze_headless_path().is_file():
+    analyze_headless_path = config.analyze_headless_path()
+    if analyze_headless_path is None or not analyze_headless_path.is_file():
         pytest.skip("Ghidra analyzeHeadless.bat is not configured")
 
     monkeypatch.chdir(tmp_path)

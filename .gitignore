@@ -10,6 +10,7 @@ wizhorse-seq-*/
 [0-9]*
 analysis_inputs/LethalMenu.dll
 analysis_inputs/smi.exe
+analysis_inputs/
 storage/
 analysis/
 capa-src/

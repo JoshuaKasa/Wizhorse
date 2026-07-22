@@ -180,6 +180,10 @@ class GhidraWorker:
         timeout_seconds: int,
     ) -> None:
         analyze_headless = config.analyze_headless_path()
+        if analyze_headless is None:
+            raise FileNotFoundError(
+                "Ghidra is not configured. Set GHIDRA_INSTALL_DIR to your Ghidra installation directory."
+            )
         if not analyze_headless.is_file():
             raise FileNotFoundError(f"Ghidra analyzeHeadless.bat not found: {analyze_headless}")
 
@@ -264,7 +268,7 @@ def _build_headless_env(project_dir: Path) -> dict[str, str]:
     project_dir = project_dir.resolve()
 
     resolved_java_home = config.java_home()
-    if resolved_java_home.exists():
+    if resolved_java_home is not None and resolved_java_home.exists():
         env["JAVA_HOME"] = str(resolved_java_home)
 
     java_home = env.get("JAVA_HOME")
