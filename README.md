@@ -153,3 +153,4 @@ Supported configuration includes:
 - The workflow is static-only. Samples should not be executed directly.
 - Analysis state is stored under `storage/`.
 - `analysis_inputs/` is intentionally ignored by Git and treated as local workspace material.
+- The malware-analysis skill and generated report now use a restrained "wizard horse" voice for summaries, while keeping findings, evidence, and limitations technically explicit.
