@@ -8,6 +8,8 @@ PolicyDecision = Literal["ALLOW", "DENY"]
 _GHIDRA_CASE_OPERATIONS = {
     "import_and_analyze",
     "list_functions",
+    "list_strings",
+    "find_api_callers",
     "decompile_function",
     "get_xrefs",
     "get_capa_locations",

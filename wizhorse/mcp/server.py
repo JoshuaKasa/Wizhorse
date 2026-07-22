@@ -175,7 +175,7 @@ def import_and_analyze(case_id: str) -> dict:
 
 
 @mcp.tool()
-def list_functions(case_id: str) -> dict:
+def list_functions(case_id: str, sort_by: str = "address") -> dict:
     """List functions discovered in the case's Ghidra project."""
     case = _lookup_case(case_id)
     if isinstance(case, dict):
@@ -184,10 +184,58 @@ def list_functions(case_id: str) -> dict:
         return _error("list_functions denied by policy: case or stored sample is unavailable")
 
     try:
-        functions = ghidra_worker.list_functions(case)
-    except (FileNotFoundError, RuntimeError, TimeoutError, OSError, ValidationError) as exc:
+        functions = ghidra_worker.list_functions(case, sort_by=sort_by)
+    except (
+        FileNotFoundError,
+        RuntimeError,
+        TimeoutError,
+        OSError,
+        ValueError,
+        ValidationError,
+    ) as exc:
         return _error(str(exc))
     return {"ok": True, "functions": [function.model_dump() for function in functions]}
+
+
+@mcp.tool()
+def list_strings(case_id: str) -> dict:
+    """List defined strings and function references in the case's Ghidra project."""
+    case = _lookup_case(case_id)
+    if isinstance(case, dict):
+        return case
+    if policy.check("list_strings", {"case_id": case.case_id}) == "DENY":
+        return _error("list_strings denied by policy: case or stored sample is unavailable")
+
+    try:
+        strings = ghidra_worker.list_strings(case)
+    except (FileNotFoundError, RuntimeError, TimeoutError, OSError, ValidationError) as exc:
+        return _error(str(exc))
+    return {"ok": True, "strings": [string.model_dump() for string in strings]}
+
+
+@mcp.tool()
+def find_api_callers(case_id: str, api_name: str) -> dict:
+    """Find functions that directly call an imported API by name."""
+    case = _lookup_case(case_id)
+    if isinstance(case, dict):
+        return case
+    if not isinstance(api_name, str) or not api_name.strip():
+        return _error("api_name must be a non-empty string")
+    if policy.check("find_api_callers", {"case_id": case.case_id}) == "DENY":
+        return _error("find_api_callers denied by policy: case or stored sample is unavailable")
+
+    try:
+        callers = ghidra_worker.find_api_callers(case, api_name)
+    except (
+        FileNotFoundError,
+        RuntimeError,
+        TimeoutError,
+        OSError,
+        ValueError,
+        ValidationError,
+    ) as exc:
+        return _error(str(exc))
+    return {"ok": True, "callers": [caller.model_dump() for caller in callers]}
 
 
 @mcp.tool()

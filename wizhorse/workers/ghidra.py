@@ -13,10 +13,12 @@ from wizhorse.daemon.cases import SAMPLES_DIR, get_sample_path
 from wizhorse.daemon.scheduler import scheduler
 from wizhorse.schemas.cases import Case
 from wizhorse.schemas.ghidra import (
+    ApiCallerInfo,
     CrossReference,
     DecompiledFunction,
     FunctionInfo,
     ImportResult,
+    StringInfo,
 )
 from wizhorse.workers.triage import run_triage
 
@@ -98,7 +100,7 @@ class GhidraWorker:
         marker_path.write_text(result.model_dump_json(indent=2), encoding="utf-8")
         return result
 
-    def list_functions(self, case: Case) -> list[FunctionInfo]:
+    def list_functions(self, case: Case, sort_by: str = "address") -> list[FunctionInfo]:
         self._ensure_analyzed(case)
         output_path = _temp_json_path(_project_dir(case))
         self._run_project_script(
@@ -107,7 +109,33 @@ class GhidraWorker:
             [str(output_path)],
             config.ghidra_query_timeout_seconds(),
         )
-        return TypeAdapter(list[FunctionInfo]).validate_python(_read_json(output_path))
+        functions = TypeAdapter(list[FunctionInfo]).validate_python(_read_json(output_path))
+        return _sort_functions(functions, sort_by)
+
+    def list_strings(self, case: Case) -> list[StringInfo]:
+        self._ensure_analyzed(case)
+        output_path = _temp_json_path(_project_dir(case))
+        self._run_project_script(
+            case,
+            "wh_list_strings.java",
+            [str(output_path)],
+            config.ghidra_query_timeout_seconds(),
+        )
+        return TypeAdapter(list[StringInfo]).validate_python(_read_json(output_path))
+
+    def find_api_callers(self, case: Case, api_name: str) -> list[ApiCallerInfo]:
+        if not isinstance(api_name, str) or not api_name.strip():
+            raise ValueError("api_name must be a non-empty string")
+
+        self._ensure_analyzed(case)
+        output_path = _temp_json_path(_project_dir(case))
+        self._run_project_script(
+            case,
+            "wh_find_api_callers.java",
+            [str(output_path), api_name.strip()],
+            config.ghidra_query_timeout_seconds(),
+        )
+        return TypeAdapter(list[ApiCallerInfo]).validate_python(_read_json(output_path))
 
     def decompile_function(self, case: Case, address: str) -> DecompiledFunction:
         if not isinstance(address, str) or not address.strip():
@@ -234,6 +262,29 @@ def _read_json(path: Path) -> Any:
             return json.load(file)
     except (OSError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"Ghidra script did not produce valid JSON at {path}") from exc
+
+
+def _sort_functions(functions: list[FunctionInfo], sort_by: str) -> list[FunctionInfo]:
+    if sort_by == "address":
+        return sorted(functions, key=lambda function: _address_sort_key(function.address))
+    if sort_by == "size":
+        return sorted(functions, key=lambda function: function.size, reverse=True)
+    if sort_by == "instruction_count":
+        return sorted(
+            functions,
+            key=lambda function: function.instruction_count
+            if function.instruction_count is not None
+            else -1,
+            reverse=True,
+        )
+    raise ValueError("sort_by must be one of address, size, instruction_count")
+
+
+def _address_sort_key(address: str) -> tuple[int, str]:
+    try:
+        return (0, f"{int(address, 16):016x}")
+    except ValueError:
+        return (1, address)
 
 
 def _managed_import_settings(case: Case) -> dict[str, int] | None:

@@ -19,6 +19,22 @@ class FunctionInfo(BaseModel):
     address: str
     name: str
     size: int
+    instruction_count: int | None = None
+
+
+class StringInfo(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    address: str
+    value: str
+    referenced_by: list[str]
+
+
+class ApiCallerInfo(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    caller_address: str
+    caller_name: str
 
 
 class DecompiledFunction(BaseModel):

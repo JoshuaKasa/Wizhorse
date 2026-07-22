@@ -5,6 +5,7 @@ import java.nio.file.Paths;
 import ghidra.app.script.GhidraScript;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.FunctionIterator;
+import ghidra.program.model.listing.InstructionIterator;
 
 public class wh_list_functions extends GhidraScript {
     @Override
@@ -22,12 +23,24 @@ public class wh_list_functions extends GhidraScript {
             payload.append("{")
                 .append("\"address\":").append(quote(function.getEntryPoint().toString())).append(",")
                 .append("\"name\":").append(quote(function.getName())).append(",")
-                .append("\"size\":").append(function.getBody().getNumAddresses())
+                .append("\"size\":").append(function.getBody().getNumAddresses()).append(",")
+                .append("\"instruction_count\":").append(instructionCount(function))
                 .append("}");
         }
 
         payload.append("]");
         Files.write(Paths.get(outputPath), payload.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
+    private int instructionCount(Function function) {
+        int count = 0;
+        InstructionIterator instructions = currentProgram.getListing()
+            .getInstructions(function.getBody(), true);
+        while (instructions.hasNext()) {
+            instructions.next();
+            count++;
+        }
+        return count;
     }
 
     private String quote(String value) {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -40,7 +41,7 @@ async def test_mcp_static_triage_workflow(tmp_path, monkeypatch):
     server_params = StdioServerParameters(
         command=sys.executable,
         args=["-m", "wizhorse.mcp.server"],
-        env={"WIZHORSE_ALLOWED_ROOTS": str(tmp_path)},
+        env={**os.environ, "WIZHORSE_ALLOWED_ROOTS": str(tmp_path)},
     )
 
     async with stdio_client(server_params) as (read_stream, write_stream):
@@ -504,7 +505,7 @@ async def test_mcp_ghidra_workflow_on_harmless_binary(tmp_path, monkeypatch):
     server_params = StdioServerParameters(
         command=sys.executable,
         args=["-m", "wizhorse.mcp.server"],
-        env={"WIZHORSE_ALLOWED_ROOTS": str(tmp_path)},
+        env={**os.environ, "WIZHORSE_ALLOWED_ROOTS": str(tmp_path)},
     )
 
     async with stdio_client(server_params) as (read_stream, write_stream):
@@ -528,6 +529,52 @@ async def test_mcp_ghidra_workflow_on_harmless_binary(tmp_path, monkeypatch):
             )
             assert functions_result["ok"] is True
             assert functions_result["functions"]
+            assert "instruction_count" in functions_result["functions"][0]
+
+            functions_by_size_result = _content_as_json(
+                await session.call_tool(
+                    "list_functions",
+                    {"case_id": case_id, "sort_by": "size"},
+                )
+            )
+            assert functions_by_size_result["ok"] is True
+            sizes = [function["size"] for function in functions_by_size_result["functions"]]
+            assert sizes == sorted(sizes, reverse=True)
+
+            functions_by_instruction_count_result = _content_as_json(
+                await session.call_tool(
+                    "list_functions",
+                    {"case_id": case_id, "sort_by": "instruction_count"},
+                )
+            )
+            assert functions_by_instruction_count_result["ok"] is True
+            instruction_counts = [
+                function["instruction_count"] or -1
+                for function in functions_by_instruction_count_result["functions"]
+            ]
+            assert instruction_counts == sorted(instruction_counts, reverse=True)
+
+            strings_result = _content_as_json(
+                await session.call_tool("list_strings", {"case_id": case_id})
+            )
+            assert strings_result["ok"] is True
+            hello_strings = [
+                item
+                for item in strings_result["strings"]
+                if item["value"] == "hello from wizhorse"
+            ]
+            assert hello_strings
+            assert int(hello_strings[0]["address"], 16) > 0
+            assert hello_strings[0]["referenced_by"]
+
+            api_callers_result = _content_as_json(
+                await session.call_tool(
+                    "find_api_callers",
+                    {"case_id": case_id, "api_name": "FlsAlloc"},
+                )
+            )
+            assert api_callers_result["ok"] is True
+            assert api_callers_result["callers"]
 
             first_function = functions_result["functions"][0]
             decompile_result = _content_as_json(
