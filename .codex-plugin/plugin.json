@@ -1,6 +1,6 @@
 {
   "name": "wizhorse",
-  "version": "0.1.0+codex.20260721143316",
+  "version": "0.1.1+codex.20260722185500",
   "description": "Evidence-driven static malware triage assistant",
   "author": {
     "name": "Wizhorse"

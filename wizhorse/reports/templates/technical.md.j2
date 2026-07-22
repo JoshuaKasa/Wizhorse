@@ -1,9 +1,9 @@
 # Wizhorse Technical Report
 
-## Wizard Horse Summary
+## Summary
 
 {% if findings %}
-The wizard horse has inspected this sample through static analysis only.
+This report is based on static analysis only.
 Current reading: `{{ verdict }}`.
 {% if verdict == "supported" %}
 Recorded findings contain supported claims, so this sample warrants careful attention.
@@ -15,7 +15,7 @@ The available evidence is too thin for a strong conclusion, so this sample remai
 The stored evidence does not support a simple clean conclusion. Read the findings and limitations carefully.
 {% endif %}
 {% else %}
-The wizard horse sees no recorded findings yet. Current reading: `insufficient evidence`.
+No findings were recorded. Current reading: `insufficient evidence`.
 {% endif %}
 
 ## Sample Identity
@@ -118,6 +118,6 @@ Limitations:
 - Add or tune YARA rules for the specific investigation scope.
 - Consider dynamic analysis if available and appropriate in a controlled environment.
 
-## Wizard Horse Closing
+## Closing
 
-This wizard horse speaks only from stored static evidence. If the report says `inconclusive`, `likely benign`, or `no malicious evidence found in static analysis`, treat that as a measured reading, not a magical guarantee.
+This report reflects only stored static evidence. If the report says `inconclusive`, `likely benign`, or `no malicious evidence found in static analysis`, treat that as a measured reading, not a guarantee.
