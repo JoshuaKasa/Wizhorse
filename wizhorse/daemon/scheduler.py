@@ -105,14 +105,22 @@ class GhidraScheduler:
 
     def _terminate_process_tree(self, pid: int) -> None:
         if os.name == "nt":
-            subprocess.run(
-                ["taskkill", "/PID", str(pid), "/T", "/F"],
-                stderr=subprocess.DEVNULL,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                text=True,
-                timeout=30,
-            )
+            try:
+                subprocess.run(
+                    ["taskkill", "/PID", str(pid), "/T", "/F"],
+                    stderr=subprocess.DEVNULL,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    text=True,
+                    timeout=5,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
             return
 
         try:

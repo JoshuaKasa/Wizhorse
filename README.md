@@ -2,6 +2,10 @@
 
 Wizhorse is an evidence-driven static malware triage assistant exposed as an MCP server.
 
+> **Status:** alpha software. Use it only for static analysis in an isolated
+> workspace; it does not execute samples, but it copies submitted files into
+> its local case storage.
+
 It supports a lightweight local workflow:
 
 - create a case from a sample path
@@ -154,3 +158,25 @@ Supported configuration includes:
 - Analysis state is stored under `storage/`.
 - `analysis_inputs/` is intentionally ignored by Git and treated as local workspace material.
 - The malware-analysis skill and generated report now use a restrained "wizard horse" voice for summaries, while keeping findings, evidence, and limitations technically explicit.
+
+## Third-party content
+
+The bundled `capa-rules/` directory is the Mandiant capa rules collection and
+is distributed under the Apache License 2.0; its license is retained at
+[`capa-rules/LICENSE.txt`](capa-rules/LICENSE.txt). See the upstream project at
+<https://github.com/mandiant/capa-rules> for rule updates and provenance.
+
+## License
+
+Wizhorse is released under the [MIT License](LICENSE). The bundled capa rules
+remain available under their own Apache License 2.0 terms.
+
+## Development
+
+Run the test suite before contributing changes:
+
+```powershell
+python -m pytest -q
+```
+
+GitHub Actions runs these tests automatically for supported Python versions.
