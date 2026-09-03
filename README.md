@@ -1,24 +1,34 @@
-# Wizhorse
+# Wizhorse 🐴
 
-Wizhorse is an evidence-driven static malware triage assistant exposed as an MCP server.
+Wizhorse is your friendly wizard-horse assistant for making sense of Windows
+file warnings. It checks a file without running it and helps explain whether a
+warning may be a false positive, what evidence was found, and what remains
+uncertain.
 
-> **Status:** alpha software. Use it only for static analysis in an isolated
-> workspace; it does not execute samples, but it copies submitted files into
-> its local case storage.
+> **Status:** alpha software. Wizhorse never executes submitted files, but it
+> copies them into local case storage for inspection. Its results are clues,
+> not a guarantee that a file is safe.
 
-It supports a lightweight local workflow:
+It supports a lightweight local workflow for people who want a second opinion
+on a suspicious download or a Windows detection:
 
-- create a case from a sample path
-- run static triage
-- run YARA and capa when available
-- import the sample into Ghidra for static reverse engineering
-- record findings with evidence
-- generate a Markdown report
+- create a local case from a file path
+- run safe, non-executing checks
+- compare the file with available YARA and capa rules
+- record the evidence and generate a Markdown report
+- use Ghidra to inspect the file's functions, strings, and code paths
 
 ## Requirements
 
+Wizhorse has one complete workflow; it is not offered in a reduced mode. Before
+using it, install and configure all of the following:
+
 - Python 3.10+
-- Windows is the primary supported environment for the Ghidra workflow
+- Windows
+- Ghidra
+- a Java JDK compatible with your Ghidra installation
+- Mandiant capa, available as `capa` on `PATH` or as `python -m capa.main`
+- the `GHIDRA_INSTALL_DIR` and `JAVA_HOME` environment variables
 
 ## Install
 
@@ -39,37 +49,22 @@ This installs the Python package and its base dependencies, including:
 
 `yara-python` and `pefile` are part of the base install, so no extra manual step is required for YARA-backed matching or PE-aware static triage.
 
-## Feature Tiers
+## Workflow
 
-### Base Workflow
+After completing the required setup, Wizhorse uses these checks together:
 
-Available after a fresh clone and `pip install -e .`:
+- `create_case` and `run_static_triage` identify the file and its basic traits
+- `run_yara`, `run_capa`, and `get_capa_locations` look for known signals
+- Ghidra imports the file, analyzes it, and supplies functions, strings,
+  cross-references, and decompiled code when the evidence needs explanation
+- `record_finding` and `generate_report` preserve a clear, evidence-based
+  conclusion
 
-- `create_case`
-- `run_static_triage`
-- `record_finding`
-- `run_yara`
-- `generate_report`
+## Required External Tools
 
-### Advanced Workflow
-
-Requires external `capa` setup in addition to the base install:
-
-- `run_capa`
-- `get_capa_locations`
-
-### Reverse Workflow
-
-Requires local Ghidra and Java setup in addition to the base install:
-
-- `import_and_analyze`
-- `list_functions`
-- `decompile_function`
-- `get_xrefs`
-
-## Optional External Tools
-
-Some features require tools that are not installed by `pip install -e .`.
+Ghidra and capa are required for the supported Wizhorse workflow. They are not
+installed by `pip install -e .`, so configure them before connecting the MCP
+server.
 
 ### capa
 
@@ -112,6 +107,19 @@ These tools depend on that setup:
 - `list_functions`
 - `decompile_function`
 - `get_xrefs`
+
+## Install Wizhorse as a Codex Skill
+
+The repository includes a Codex skill that tells Codex how to set up and use
+the complete Wizhorse workflow. Ask Codex to:
+
+```text
+Install the skill from GitHub repo JoshuaKasa/Wizhorse at skills/wizhorse.
+```
+
+Codex then reads `skills/wizhorse/SKILL.md`. The skill includes the required
+setup, static-only safety rules, evidence standard, and user-friendly reporting
+guidance.
 
 ## MCP Setup
 

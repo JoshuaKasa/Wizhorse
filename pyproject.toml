@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "wizhorse"
 version = "0.1.0"
-description = "Evidence-driven static malware triage assistant"
+description = "A friendly assistant for understanding Windows file warnings"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {file = "LICENSE"}
@@ -20,7 +20,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
 ]
-keywords = ["malware-analysis", "mcp", "static-analysis", "triage"]
+keywords = ["windows-security", "false-positive", "file-analysis", "mcp", "suspicious-files"]
 dependencies = [
     "Jinja2",
     # The MCP server uses the FastMCP API provided by MCP 1.x.
