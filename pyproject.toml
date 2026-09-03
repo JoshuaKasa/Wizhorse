@@ -23,7 +23,8 @@ classifiers = [
 keywords = ["malware-analysis", "mcp", "static-analysis", "triage"]
 dependencies = [
     "Jinja2",
-    "mcp",
+    # The MCP server uses the FastMCP API provided by MCP 1.x.
+    "mcp<2",
     "pydantic>=2",
     "pefile",
     "yara-python",
