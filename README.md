@@ -5,9 +5,9 @@ file warnings. It checks a file without running it and helps explain whether a
 warning may be a false positive, what evidence was found, and what remains
 uncertain.
 
-> **Status:** alpha software. Wizhorse never executes submitted files, but it
-> copies them into local case storage for inspection. Its results are clues,
-> not a guarantee that a file is safe.
+> Wizhorse never executes submitted files, but it copies them into local case
+> storage for inspection. Its results are clues, not a guarantee that a file
+> is safe.
 
 It supports a lightweight local workflow for people who want a second opinion
 on a suspicious download or a Windows detection:
