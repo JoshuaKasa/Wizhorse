@@ -119,7 +119,7 @@ class GhidraScheduler:
 
             try:
                 os.kill(pid, signal.SIGTERM)
-            except ProcessLookupError:
+            except OSError:
                 pass
             return
 
